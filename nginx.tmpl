@@ -116,15 +116,19 @@ server {
 {{ end }}
 
 {{ range $host, $containers := groupByMulti $ "Env.VIRTUAL_HOST" "," }}
+{{ $paths := groupByMulti $containers "Env.VIRTUAL_PATH" "," }}
+{{ $paths := when (eq (len $paths) 0) (dict "/" $containers) $paths }}
 
 {{ $host := trim $host }}
 {{ $is_regexp := hasPrefix "~" $host }}
 {{ $upstream_name := when $is_regexp (sha1 $host) $host }}
 
+{{ range $path, $pathContainers := $paths }}
+{{ $upstream := when (eq $path "/") $upstream_name (printf "%s-%s" $upstream_name (sha1 $path)) }}
 # {{ $host }}
-upstream {{ $upstream_name }} {
+upstream {{ $upstream }} {
 
-{{ range $container := $containers }}
+{{ range $container := $pathContainers }}
 	{{ $addrLen := len $container.Addresses }}
 
 	{{ range $knownNetwork := $CurrentContainer.Networks }}
@@ -150,6 +154,7 @@ upstream {{ $upstream_name }} {
 	{{ end }}
 {{ end }}
 }
+{{ end }}
 
 {{ $default_host := or ($.Env.DEFAULT_HOST) "" }}
 {{ $default_server := index (dict $host "" $default_host "default_server") $host }}
@@ -272,16 +277,19 @@ server {
 	include /etc/nginx/vhost.d/default;
 	{{ end }}
 
-	location / {
+	{{ range $path, $pathContainers := $paths }}
+	{{ $upstream := when (eq $path "/") $upstream_name (printf "%s-%s" $upstream_name (sha1 $path)) }}
+	{{ $dest := when (eq $path "/") "" $path }}
+	location {{ $path }} {
 		{{ if eq $proto "uwsgi" }}
 		include uwsgi_params;
-		uwsgi_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		uwsgi_pass {{ trim $proto }}://{{ trim $upstream }}{{ $dest }};
 		{{ else if eq $proto "fastcgi" }}
 		root   {{ trim $vhost_root }};
 		include fastcgi.conf;
-		fastcgi_pass {{ trim $upstream_name }};
+		fastcgi_pass {{ trim $upstream }};
 		{{ else }}
-		proxy_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		proxy_pass {{ trim $proto }}://{{ trim $upstream }}{{ $dest }};
 		{{ end }}
 
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
@@ -294,6 +302,7 @@ server {
 		include /etc/nginx/vhost.d/default_location;
 		{{ end }}
 	}
+	{{ end }}
 }
 
 {{ end }}
@@ -319,16 +328,19 @@ server {
 	include /etc/nginx/vhost.d/default;
 	{{ end }}
 
-	location / {
+	{{ range $path, $pathContainers := $paths }}
+	{{ $upstream := when (eq $path "/") $upstream_name (printf "%s-%s" $upstream_name (sha1 $path)) }}
+	{{ $dest := when (eq $path "/") "" $path }}
+	location {{ $path }} {
 		{{ if eq $proto "uwsgi" }}
 		include uwsgi_params;
-		uwsgi_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		uwsgi_pass {{ trim $proto }}://{{ trim $upstream }}{{ $dest }};
 		{{ else if eq $proto "fastcgi" }}
 		root   {{ trim $vhost_root }};
 		include fastcgi.conf;
-		fastcgi_pass {{ trim $upstream_name }};
+		fastcgi_pass {{ trim $upstream }};
 		{{ else }}
-		proxy_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		proxy_pass {{ trim $proto }}://{{ trim $upstream }}{{ $dest }};
 		{{ end }}
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
 		auth_basic	"Restricted {{ $host }}";
@@ -340,6 +352,7 @@ server {
 		include /etc/nginx/vhost.d/default_location;
 		{{ end }}
 	}
+	{{ end }}
 }
 
 {{ if (and (not $is_https) (exists "/etc/nginx/certs/default.crt") (exists "/etc/nginx/certs/default.key")) }}
