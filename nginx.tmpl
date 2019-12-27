@@ -31,9 +31,11 @@ map $http_x_forwarded_proto $proxy_x_forwarded_proto {
 
 # If we receive X-Forwarded-Port, pass it through; otherwise, pass along the
 # server port the client connected to
-map $http_x_forwarded_port $proxy_x_forwarded_port {
-  default $http_x_forwarded_port;
-  ''      $server_port;
+map "$http_x_forwarded_proto-$http_x_forwarded_port" $proxy_x_forwarded_port {
+  default  $http_x_forwarded_port;
+  'http-'  80;
+  'https-' 443;
+  '-'      $server_port;
 }
 
 # If we receive Upgrade, set Connection to "upgrade"; otherwise, delete any
@@ -52,7 +54,7 @@ ssl_dhparam /etc/nginx/dhparam/dhparam.pem;
 {{ end }}
 
 # Set appropriate X-Forwarded-Ssl header
-map $scheme $proxy_x_forwarded_ssl {
+map $proxy_x_forwarded_proto $proxy_x_forwarded_ssl {
   default off;
   https on;
 }
